@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
@@ -15,6 +16,27 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(cookieParser());
+
+// build middle ware
+const verifyToken = async (req, res, next) => {
+  const token = req.cookies?.token;
+  // console.log("value of token in middle ware : ", token);
+  if (!token) {
+    return res.status(401).send({ message: "You are not authorized" });
+  }
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    // error
+    if (err) {
+      return res
+        .status(401)
+        .send({ message: "You are not authorized from token verification" });
+    }
+    // decoded
+    req.user = decoded;
+    next();
+  });
+};
 
 // console.log("user", process.env.DB_USER);
 
@@ -40,16 +62,15 @@ async function run() {
     // auth related apis
     app.post("/jwt", async (req, res) => {
       const user = req.body;
-      console.log(user);
+      // console.log(user);
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: "1h",
       });
-      console.log(token);
+      // console.log(token);
       res
         .cookie("token", token, {
           httpOnly: true,
           secure: false,
-          sameSite: "none",
         })
         .send({ success: true });
     });
@@ -70,7 +91,13 @@ async function run() {
 
     // bookings related api
 
-    app.get("/bookings", async (req, res) => {
+    app.get("/bookings", verifyToken, async (req, res) => {
+      // console.log("token", req.cookies.token);
+      // console.log("user  in verify token :", req.user.email);
+      // console.log("user in body :", req.query?.email);
+      if (req.user.email !== req.query.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
       let query = {};
       if (req.query?.email) {
         query = { email: req.query.email };
@@ -88,7 +115,7 @@ async function run() {
     app.patch("/bookings/:id", async (req, res) => {
       const id = req.params.id;
       const updatedBookings = req.body;
-      console.log(updatedBookings);
+      // console.log(updatedBookings);
       const filter = { _id: new ObjectId(id) };
 
       const updateDoc = {
@@ -96,7 +123,7 @@ async function run() {
           status: updatedBookings.statusbar,
         },
       };
-      console.log(updateDoc);
+      // console.log(updateDoc);
       const result = await bookingCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
